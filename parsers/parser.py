@@ -1,6 +1,11 @@
 from bs4 import BeautifulSoup
 import requests as req
 import csv
+import time
+import logging
+
+
+PATH = '../../data.csv'
 
 
 class Parser:
@@ -33,8 +38,9 @@ class Zachestnyibiznes(Parser):
         other_data.append(['Статус', status])
         try:
             capital = \
-            soup_company.find(itemprop='founder').find_previous('small').text.split('ЗАЧЕСТНЫЙБИЗНЕС')[1].split(' руб')[
-                0]
+                soup_company.find(itemprop='founder').find_previous('small').text.split('ЗАЧЕСТНЫЙБИЗНЕС')[1].split(
+                    ' руб')[
+                    0]
             other_data.append(['Уставный капитал', capital])
         except:
             other_data.append(['Уставный капитал', 0])
@@ -112,24 +118,20 @@ class Rusprofile(Parser):
     def make_url_company(id):
         return 'https://www.rusprofile.ru/id/{}'.format(id)
 
-    # @staticmethod
-    # def run_urls():
-    #     for i in range(max(int)):
-    #         try:
-    #             return req.get(Rusprofile.make_url_company(i))
-    #         except TimeoutError:
-    #             return None
 
-
-class Audit(Parser):  # больше данных чем на Зачестный бизнес
+class Audit():  # больше данных чем на Зачестный бизнес
     pass
 
 
-def csv_writer(data, path):
+def csv_writer(path):
     with open(path, 'w', newline='') as csv_file:
         writer = csv.writer(csv_file, delimiter=';')
-        for line in data:
-            writer.writerow(line)
+        for i in range(100):
+            data = parse_data(i)
+            if not data is None:
+                for line in data:
+                    writer.writerow(line)
+        csv_file.close()
 
 
 def parse_data(id):  # пошагойвый парсинг данных одной компании
@@ -144,7 +146,8 @@ def parse_data(id):  # пошагойвый парсинг данных одно
             other_data = Zachestnyibiznes.get_other_data(soup_company)
             fin_soup = Parser.get_soup(Zachestnyibiznes.make_url_finance_table(params))
             data = Zachestnyibiznes.collect_company_data(fin_soup, other_data)
-            csv_writer(data, '../../data.csv')
+            return data
+    return None
 
 
 if __name__ == '__main__':
@@ -153,5 +156,7 @@ if __name__ == '__main__':
     #     soup = Parser.get_soup(url)
     #     inn = Rusprofile.get_inn(soup)
     #     print(inn)
-    parse_data(213123)
-    print('FINISH!!!!!!!!!!')
+    start = time.clock()
+    csv_writer(PATH)
+    time_working = time.clock() - start
+    print("Время выполнения: {}".format(time_working),'FINISH!!!!!!!!!!')

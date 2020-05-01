@@ -1,12 +1,16 @@
-from bs4 import BeautifulSoup
-import requests as req
-import csv
-import time
+import _csv as csv
 import logging
+import time
 
+import requests as req
+from bs4 import BeautifulSoup
 
-PATH = '../../data.csv'
+DATA_PATH = 'data.csv'
+LOGGER_PATH = 'logger.log'
 
+breaking_companies = 0
+
+logging.basicConfig(filename=LOGGER_PATH, filemode='w', level=logging.INFO)
 
 class Parser:
     @staticmethod
@@ -25,12 +29,14 @@ class Parser:
 class Zachestnyibiznes(Parser):
 
     @staticmethod
-    def get_other_data(soup_company: BeautifulSoup):  # находим параметры другие параметры, такие как статус и тд
+    def get_other_data(soup_company: BeautifulSoup, inn):  # находим параметры другие параметры, такие как статус и тд
+
         other_data = [["Наименование компании", soup_company.find(id='nameCompCard').text.split('\n')[0]]]
+        other_data.append(['ИНН', inn])
         try:  # Оценки может не быть
             other_data.append(['Оценка', soup_company.find(class_="box-rating").text])
         except:
-            other_data.append(['Оценка', '-'])
+            other_data.append(['Оценка', None])
 
         founding_date = soup_company.find(itemprop="foundingDate")
         other_data.append(['Дата регистрации', founding_date.text.split('ЗАЧЕСТНЫЙБИЗНЕС\n')[1]])
@@ -69,19 +75,20 @@ class Zachestnyibiznes(Parser):
         return 'https://zachestnyibiznes.ru/company/balance?okpo={}&inn={}&date={}&page='.format(params['okpo'],
                                                                                                  params['inn'],
                                                                                                  params['date'])
-
     @staticmethod
     def find_company(inn: str):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
         url = 'https://zachestnyibiznes.ru/search?query={}'.format(inn)
-        soup = Zachestnyibiznes.get_soup(url)
-        status = soup.find('a', itemprop='legalName').find_next('td').find_next('span').text[1:]
-        if status == 'Ликвидировано ':
+        soup = Parser.get_soup(url)
+        try:
+            status = soup.find('a', itemprop='legalName').find_next('td').find_next('span').text[1:]
+            if status == 'Ликвидировано ':
+                return None
+            return Parser.get_soup('https://zachestnyibiznes.ru' + soup.find(itemprop='legalName')['href'])
+        except:
             return None
-        return Parser.get_soup('https://zachestnyibiznes.ru' + soup.find(itemprop='legalName')['href'])
 
     @staticmethod
-    def collect_company_data(soup_finance_table: BeautifulSoup,
-                             other_data):  # сборка всех данных о компании в один список
+    def collect_company_data(soup_finance_table: BeautifulSoup, other_data):  # сборка всех данных о компании
         # данные с основной страницы компании
         data = [[]]
         for i in other_data:
@@ -119,18 +126,68 @@ class Rusprofile(Parser):
         return 'https://www.rusprofile.ru/id/{}'.format(id)
 
 
-class Audit():  # больше данных чем на Зачестный бизнес
-    pass
+class Audit(Parser):  # больше данных чем на Зачестный бизнес
+    @staticmethod
+    def find_company(inn: str):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
+        url = 'https://www.audit-it.ru/buh_otchet/index.php?q=+{}'.format(inn)
+        soup = Parser.get_soup(url)
+        try:
+            href = soup.find(class_='resultsTable').find_next('a')['href']
+            return Parser.get_soup('https://www.audit-it.ru' + href)
+        except:
+            return None
+
+
+
+    @staticmethod
+    def get_other_data(soup:BeautifulSoup):
+        data = []
+        arr = soup.find_all(class_='firmInfo')
+        for i in range(2, 6):
+            text = arr[i].text
+            name = text.split(':')[0]
+            result_code = text.split(':')[1].split(' ')[0]
+            result_name = text.split(':')[1].split(' ')[2]
+            data.append([name, result_code, result_name])
+        return data
+
+
+    @staticmethod
+    def collect_company_data(soup: BeautifulSoup):
+        data = []
+
+        table_1 = soup.find(id='tblIdx1')
+        tr_1 = table_1.find_all('tr', class_='calcRow')
+        for tr in tr_1:
+            td = tr.find_all('td')
+            tr_data = [td[0]]
+            for i in range(2, len(td)):
+                tr_data.append(td[i].text)
+            data.append(tr_data)
+
+        table_2 = soup.find('table', class_='tblFin').find('tbody')
+        tr_2 = table_2.find_all('tr')
+        for tr in tr_2:
+            data.append([i.text for i in tr.find_all('td')])
+
+        table_3 = soup.find()
+
+
 
 
 def csv_writer(path):
+    global breaking_companies
     with open(path, 'w', newline='') as csv_file:
         writer = csv.writer(csv_file, delimiter=';')
-        for i in range(100):
-            data = parse_data(i)
+        for id in range(100):
+            data = parse_data(id)
             if not data is None:
                 for line in data:
                     writer.writerow(line)
+                logging.info('[id:{}]-->Успешная запись компании'.format(id))
+            else:
+                logging.warning('[id:{}]-->Брак'.format(id))
+                breaking_companies += 1
         csv_file.close()
 
 
@@ -141,12 +198,15 @@ def parse_data(id):  # пошагойвый парсинг данных одно
     if not inn is None:
         soup_company = Zachestnyibiznes.find_company(inn)
         if not soup_company is None:
-            Zachestnyibiznes.get_other_data(soup_company)
             params = Zachestnyibiznes.get_params_for_finance(soup_company)
-            other_data = Zachestnyibiznes.get_other_data(soup_company)
+            other_data = Zachestnyibiznes.get_other_data(soup_company, inn)
             fin_soup = Parser.get_soup(Zachestnyibiznes.make_url_finance_table(params))
             data = Zachestnyibiznes.collect_company_data(fin_soup, other_data)
             return data
+        else:
+            logging.warning('[id:{}]-->Компания не найдена на сайте Zachestnyibiznes'.format(id))
+    else:
+        logging.warning('[id:{}]-->Компании не существует'.format(id))
     return None
 
 
@@ -156,7 +216,9 @@ if __name__ == '__main__':
     #     soup = Parser.get_soup(url)
     #     inn = Rusprofile.get_inn(soup)
     #     print(inn)
-    start = time.clock()
-    csv_writer(PATH)
-    time_working = time.clock() - start
-    print("Время выполнения: {}".format(time_working),'FINISH!!!!!!!!!!')
+
+    start = time.time()
+    csv_writer(DATA_PATH)
+    time_working = time.time() - start
+    print("Брак: {} компаний из 100".format(breaking_companies))
+    print("Время выполнения: {}".format(time_working), 'FINISH!!!!!!!!!!')

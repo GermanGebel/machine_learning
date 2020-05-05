@@ -12,6 +12,7 @@ breaking_companies = 0
 
 logging.basicConfig(filename=LOGGER_PATH, filemode='w', level=logging.INFO)
 
+
 class Parser:
     @staticmethod
     def get_soup(url, params=None) -> BeautifulSoup:
@@ -68,13 +69,17 @@ class Zachestnyibiznes(Parser):
 
     @staticmethod
     def parse_num(s: str):  # парсер чисел в финансовой таблице
-        return ''.join(s[1:].split(' '))
+        result = ''.join(s[1:].split(' ')).split(',')[0]
+        if result == '-':
+            return 0
+        return result
 
     @staticmethod
     def make_url_finance_table(params: dict):  # создаем юрл для финансовой таблицы
         return 'https://zachestnyibiznes.ru/company/balance?okpo={}&inn={}&date={}&page='.format(params['okpo'],
                                                                                                  params['inn'],
                                                                                                  params['date'])
+
     @staticmethod
     def find_company(inn: str):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
         url = 'https://zachestnyibiznes.ru/search?query={}'.format(inn)
@@ -95,8 +100,6 @@ class Zachestnyibiznes(Parser):
             data.append(i)
         # данные из таблицы
         table = soup_finance_table.find('div', id='fin-stat').find('table')
-        thead = table.find('thead')
-        data.append([i.text for i in thead.find_all('th')])
         tbody = table.find('tbody')
         tr = tbody.find_all('tr')
         for t in tr:
@@ -104,10 +107,17 @@ class Zachestnyibiznes(Parser):
             mini_data = []
             for i in td:
                 s = i.text
-                if '\n' in s:
+                if '\n' == s[0]:
                     s = Zachestnyibiznes.parse_num(s)
                 mini_data.append(s)
-            data.append(mini_data)
+            if not(len(mini_data) == 1):
+                if not ('итого' in mini_data[0].lower() or 'баланс' in mini_data[0].lower()):
+                    if not (int(mini_data[1]) == 0
+                                and int(mini_data[2]) == 0
+                                and int(mini_data[3]) == 0
+                                and int(mini_data[4]) == 0
+                                and int(mini_data[5]) == 0):
+                        data.append(mini_data)
         data.append([])
         return data
 
@@ -125,6 +135,7 @@ class Rusprofile(Parser):
     def make_url_company(id):
         return 'https://www.rusprofile.ru/id/{}'.format(id)
 
+
 class Audit(Parser):  # больше данных чем на Зачестный бизнес
     @staticmethod
     def session():
@@ -135,31 +146,28 @@ class Audit(Parser):  # больше данных чем на Зачестный
             'USER_LOGIN': 'audit-it-ru',
             'USER_PASSWORD': 'audit-it',
             "USER_REMEMBER": "Y",
-            "Login":'%C2%F5%EE%E4'
+            "Login": '%C2%F5%EE%E4'
         }
         with req.Session() as session:
             url = "https://www.audit-it.ru/my/login.php?login=yes&back_url=%2Fforum%2Findex.php"  # Ваш URL с формами логина
             session.post(url, params)  # Отправляем данные в POST, в session записываются наши куки
             return session
-        #     url2 = "www.example.com/data_for_parsing"  # Ваш второй URL - тот с которого вам нужно спарсить данные
-        #     r = session.get(url2)  # Все! Вы получили Response. Поскольку в session записались куки авторизации - при вызове метода get() с этой сессии в Request отправляются ваши куки.
-        #
-        # print(r.text)  # Дальше делайте с вашими данными все что захотите
-        #
+
     @staticmethod
     def get_soup(url, session=req, params=None) -> BeautifulSoup:
         try:
             page = session.post(url, data=params, headers={'User-Agent': UserAgent().chrome})
-            with open('page.html', 'w') as file:  # это для себя
-                file.write(page.text)
-                file.close()
+            # with open('page.html', 'w') as file:  # это для себя
+            #     file.write(page.text)
+            #     file.close()
             soup = BeautifulSoup(page.text, 'html.parser')
             return soup
         except req.exceptions.Timeout:
             return None
 
     @staticmethod
-    def find_company(inn: str, session):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
+    def find_company(inn: str,
+                     session):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
         url = 'https://www.audit-it.ru/buh_otchet/index.php?q=+{}'.format(inn)
         soup = Audit.get_soup(url, session)
         try:
@@ -168,10 +176,8 @@ class Audit(Parser):  # больше данных чем на Зачестный
         except:
             return None
 
-
-
     @staticmethod
-    def get_other_data(soup:BeautifulSoup):
+    def get_other_data(soup: BeautifulSoup):
         data = []
         arr = soup.find_all(class_='firmInfo')
         for i in range(2, 6):
@@ -181,7 +187,6 @@ class Audit(Parser):  # больше данных чем на Зачестный
             result_name = text.split(':')[1].split(' ')[2]
             data.append([name, result_code, result_name])
         return data
-
 
     @staticmethod
     def collect_company_data(soup: BeautifulSoup):
@@ -214,13 +219,11 @@ class Audit(Parser):  # больше данных чем на Зачестный
         return data
 
 
-
-
 def csv_writer(path):
     global breaking_companies
     with open(path, 'w', newline='') as csv_file:
         writer = csv.writer(csv_file, delimiter=';')
-        for id in range(50):
+        for id in range(10):
             data = audit_parse_data(id)
             if not data is None:
                 for line in data:
@@ -250,6 +253,7 @@ def parse_data(id):  # пошагойвый парсинг данных одно
         logging.warning('[id:{}]-->Компании не существует'.format(id))
     return None
 
+
 def audit_parse_data(id):
     url = Rusprofile.make_url_company(id)
     soup = Parser.get_soup(url)
@@ -270,8 +274,6 @@ def audit_parse_data(id):
         else:
             logging.warning('[id:{}]-->Компании не найдена на аудит'.format(id))
         return None
-
-
 
 
 if __name__ == '__main__':

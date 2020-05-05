@@ -1,7 +1,7 @@
 import _csv as csv
 import logging
 import time
-
+from fake_useragent import UserAgent
 import requests as req
 from bs4 import BeautifulSoup
 
@@ -16,7 +16,7 @@ class Parser:
     @staticmethod
     def get_soup(url, params=None) -> BeautifulSoup:
         try:
-            page = req.post(url, data=params)
+            page = req.post(url, data=params, headers={'User-Agent': UserAgent().chrome})
             # with open('page.html', 'w') as file:  # это для себя
             #     file.write(page.text)
             #     file.close()
@@ -125,15 +125,46 @@ class Rusprofile(Parser):
     def make_url_company(id):
         return 'https://www.rusprofile.ru/id/{}'.format(id)
 
-
 class Audit(Parser):  # больше данных чем на Зачестный бизнес
     @staticmethod
-    def find_company(inn: str):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
+    def session():
+        params = {
+            'backurl': '/forum/index.php',
+            'AUTH_FORM': 'Y',
+            'TYPE': 'AUTH',
+            'USER_LOGIN': 'audit-it-ru',
+            'USER_PASSWORD': 'audit-it',
+            "USER_REMEMBER": "Y",
+            "Login":'%C2%F5%EE%E4'
+        }
+        with req.Session() as session:
+            url = "https://www.audit-it.ru/my/login.php?login=yes&back_url=%2Fforum%2Findex.php"  # Ваш URL с формами логина
+            session.post(url, params)  # Отправляем данные в POST, в session записываются наши куки
+            return session
+        #     url2 = "www.example.com/data_for_parsing"  # Ваш второй URL - тот с которого вам нужно спарсить данные
+        #     r = session.get(url2)  # Все! Вы получили Response. Поскольку в session записались куки авторизации - при вызове метода get() с этой сессии в Request отправляются ваши куки.
+        #
+        # print(r.text)  # Дальше делайте с вашими данными все что захотите
+        #
+    @staticmethod
+    def get_soup(url, session=req, params=None) -> BeautifulSoup:
+        try:
+            page = session.post(url, data=params, headers={'User-Agent': UserAgent().chrome})
+            with open('page.html', 'w') as file:  # это для себя
+                file.write(page.text)
+                file.close()
+            soup = BeautifulSoup(page.text, 'html.parser')
+            return soup
+        except req.exceptions.Timeout:
+            return None
+
+    @staticmethod
+    def find_company(inn: str, session):  # находим компанию в поисковой строке по ИНН и возвращаем soup страницы компании
         url = 'https://www.audit-it.ru/buh_otchet/index.php?q=+{}'.format(inn)
-        soup = Parser.get_soup(url)
+        soup = Audit.get_soup(url, session)
         try:
             href = soup.find(class_='resultsTable').find_next('a')['href']
-            return Parser.get_soup('https://www.audit-it.ru' + href)
+            return Audit.get_soup('https://www.audit-it.ru' + href, session)
         except:
             return None
 
@@ -154,23 +185,33 @@ class Audit(Parser):  # больше данных чем на Зачестный
 
     @staticmethod
     def collect_company_data(soup: BeautifulSoup):
-        data = []
+        data = [[]]
+        # data.append(Audit.get_other_data(soup))
+        for i in [1, 2, 4]:
+            try:
+                table = soup.find('div', id='form{}'.format(i)).find('table')
+                rows = table.find_all('tr', class_='calcRow')
+                for r in rows:
+                    td = r.find_all('td')
+                    tr_data = [td[0]]
+                    for i in range(2, len(td)):
+                        tr_data.append(td[i].text)
+                    data.append(tr_data)
+                try:
+                    fin_table = table.find_next(class_='tblFin').find('tbody')
+                    rows = fin_table.find_all('tr')
+                    for r in rows:
+                        td = r.find_all('td')
+                        tr_data = []
+                        for i in td:
+                            tr_data.append(i.text)
+                        data.append(tr_data)
+                except:
+                    print('fin table {} is not exist'.format(i))
+            except:
+                print('table {} is not exist'.format(i))
 
-        table_1 = soup.find(id='tblIdx1')
-        tr_1 = table_1.find_all('tr', class_='calcRow')
-        for tr in tr_1:
-            td = tr.find_all('td')
-            tr_data = [td[0]]
-            for i in range(2, len(td)):
-                tr_data.append(td[i].text)
-            data.append(tr_data)
-
-        table_2 = soup.find('table', class_='tblFin').find('tbody')
-        tr_2 = table_2.find_all('tr')
-        for tr in tr_2:
-            data.append([i.text for i in tr.find_all('td')])
-
-        table_3 = soup.find()
+        return data
 
 
 
@@ -179,8 +220,8 @@ def csv_writer(path):
     global breaking_companies
     with open(path, 'w', newline='') as csv_file:
         writer = csv.writer(csv_file, delimiter=';')
-        for id in range(100):
-            data = parse_data(id)
+        for id in range(50):
+            data = audit_parse_data(id)
             if not data is None:
                 for line in data:
                     writer.writerow(line)
@@ -209,16 +250,41 @@ def parse_data(id):  # пошагойвый парсинг данных одно
         logging.warning('[id:{}]-->Компании не существует'.format(id))
     return None
 
+def audit_parse_data(id):
+    url = Rusprofile.make_url_company(id)
+    soup = Parser.get_soup(url)
+    inn = Rusprofile.get_inn(soup)
+    if not inn is None:
+        session = Audit.session()
+        soup_company1 = Audit.find_company(inn, session)
+        if not soup_company1 is None:
+            soup_company = Zachestnyibiznes.find_company(inn)
+            if not soup_company is None:
+                params = Zachestnyibiznes.get_params_for_finance(soup_company)
+                other_data = Zachestnyibiznes.get_other_data(soup_company, inn)
+                fin_soup = Parser.get_soup(Zachestnyibiznes.make_url_finance_table(params))
+                data = Zachestnyibiznes.collect_company_data(fin_soup, other_data)
+                return data
+            else:
+                logging.warning('[id:{}]-->Компания не найдена на сайте Zachestnyibiznes'.format(id))
+        else:
+            logging.warning('[id:{}]-->Компании не найдена на аудит'.format(id))
+        return None
+
+
+
 
 if __name__ == '__main__':
+    start = time.time()
     # for i in range(5):
     #     url = Rusprofile.make_url_company(i)
     #     soup = Parser.get_soup(url)
     #     inn = Rusprofile.get_inn(soup)
     #     print(inn)
-
-    start = time.time()
     csv_writer(DATA_PATH)
+
+    # csv_writer(DATA_PATH)
+
+    # print("Брак: {} компаний из 100".format(breaking_companies))
     time_working = time.time() - start
-    print("Брак: {} компаний из 100".format(breaking_companies))
     print("Время выполнения: {}".format(time_working), 'FINISH!!!!!!!!!!')

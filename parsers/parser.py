@@ -32,7 +32,7 @@ class Zachestnyibiznes(Parser):
     @staticmethod
     def get_other_data(soup_company: BeautifulSoup, inn):  # находим параметры другие параметры, такие как статус и тд
 
-        other_data = [["Наименование компании", soup_company.find(id='nameCompCard').text.split('\n')[0]]]
+        other_data = []
         other_data.append(['ИНН', inn])
         try:  # Оценки может не быть
             other_data.append(['Оценка', soup_company.find(class_="box-rating").text])
@@ -111,13 +111,12 @@ class Zachestnyibiznes(Parser):
                     s = Zachestnyibiznes.parse_num(s)
                 mini_data.append(s)
             if not(len(mini_data) == 1):
-                if not ('итого' in mini_data[0].lower() or 'баланс' in mini_data[0].lower()):
-                    if not (int(mini_data[1]) == 0
-                                and int(mini_data[2]) == 0
-                                and int(mini_data[3]) == 0
-                                and int(mini_data[4]) == 0
-                                and int(mini_data[5]) == 0):
-                        data.append(mini_data)
+                data.append(mini_data)
+            else:
+                if 'Движение капитала' in mini_data[0]:
+                    break
+        data.pop(len(data) - 2)
+        data.pop(len(data) - 1)
         data.append([])
         return data
 
@@ -228,9 +227,9 @@ def csv_writer(path):
             if not data is None:
                 for line in data:
                     writer.writerow(line)
-                logging.info('[id:{}]-->Успешная запись компании'.format(id))
+                logging.info('[id:{}]-->Успешная запись компании'.format(id).encode('utf-8').decode('utf-8'))
             else:
-                logging.warning('[id:{}]-->Брак'.format(id))
+                logging.warning('[id:{}]-->Брак'.format(id).encode('utf-8').decode('utf-8'))
                 breaking_companies += 1
         csv_file.close()
 
@@ -248,9 +247,9 @@ def parse_data(id):  # пошагойвый парсинг данных одно
             data = Zachestnyibiznes.collect_company_data(fin_soup, other_data)
             return data
         else:
-            logging.warning('[id:{}]-->Компания не найдена на сайте Zachestnyibiznes'.format(id))
+            logging.warning('[id:{}]-->Компания не найдена на сайте Zachestnyibiznes'.format(id).encode('utf-8').decode('utf-8'))
     else:
-        logging.warning('[id:{}]-->Компании не существует'.format(id))
+        logging.warning('[id:{}]-->Компании не существует'.format(id).encode('utf-8').decode('utf-8'))
     return None
 
 
@@ -270,9 +269,9 @@ def audit_parse_data(id):
                 data = Zachestnyibiznes.collect_company_data(fin_soup, other_data)
                 return data
             else:
-                logging.warning('[id:{}]-->Компания не найдена на сайте Zachestnyibiznes'.format(id))
+                logging.warning('[id:{}]-->Компания не найдена на сайте Zachestnyibiznes'.format(id).encode('utf-8').decode('utf-8'))
         else:
-            logging.warning('[id:{}]-->Компании не найдена на аудит'.format(id))
+            logging.warning('[id:{}]-->Компании не найдена на аудит'.format(id).encode('utf-8').decode('utf-8'))
         return None
 
 

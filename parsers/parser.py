@@ -31,16 +31,16 @@ class Zachestnyibiznes(Parser):
     @staticmethod
     # находим другие параметры, такие как статус и тд
     def collect_other_data(soup_company: BeautifulSoup, inn):
-        other_data = {'ИНН': inn}
+        other_data = {'инн': inn}
 
         rating_box = soup_company.find(class_="box-rating")
-        other_data['Оценка'] = rating_box.text.lower() if rating_box else None
+        other_data['оценка'] = rating_box.text.lower() if rating_box else None
 
         founding_date = soup_company.find(itemprop="foundingDate")
-        other_data['Дата регистрации'] = founding_date.text.split('\n')[1] if founding_date else None
+        other_data['дата_регистрации'] = founding_date.text.split('\n')[1] if founding_date else None
 
         status = founding_date.find_previous('b')
-        other_data['Статус'] = status.text if status else None
+        other_data['статус'] = status.text if status else None
         return other_data
 
     @staticmethod
@@ -82,13 +82,16 @@ class Zachestnyibiznes(Parser):
         finances = []
         table_rows = soup_finance_table.find('tbody').find_all(name='tr', attrs={'style': None}, limit=58)
         # названия всех статей
-        headers = [x.find(name='td', attrs={'data-th': None}).text.strip() for x in table_rows]
+        headers = [x.find(
+            name='td', attrs={'data-th': None}).text.strip().lower().replace(' ', '_') for x in table_rows]
         for i in range(2018, 2015, -1):
             # значения статей за конкретный год
             finances_for_year = [x.find('td', attrs={'data-th': f'{i}: '}).text.strip() for x in table_rows]
+            if '-' in finances_for_year:  # если за этот год уже нет данных, то даже не пишем это
+                break
             # собираем все в массив типа [{финансы за 2018}, {финансы за 2017}, ...]
             finance_dict = dict(zip(headers, finances_for_year))
-            finance_dict['Год'] = i
+            finance_dict['год'] = i
             finances.append(finance_dict)
         return finances
 
@@ -107,7 +110,7 @@ class Rusprofile(Parser):
         return 'https://www.rusprofile.ru/id/{}'.format(id)
 
 
-class Audit(Parser):  # больше данных чем на Зачестный бизнес
+class Audit(Parser):
     @staticmethod
     def session():
         params = {
@@ -173,16 +176,15 @@ def parse_data(id):
 
 def csv_writer(path):
     with open(path, 'w', newline='', encoding='utf-8') as csv_file:
-        # writer = csv.writer(csv_file, delimiter=';')
         writer = csv.DictWriter(csv_file, fieldnames='')
         flag = True
-        for id in range(10):
+        for id in range(10848535, 10848536):
             data = parse_data(id)
             if data:
-                if flag:
+                if flag:  # шобы шапку csv один раз зполнить на основании данных из data и больше не трогать
                     fieldnames = list(data[0].keys())
-                    fieldnames.remove('Год')
-                    fieldnames.insert(1, 'Год')
+                    fieldnames.remove('год')
+                    fieldnames.insert(1, 'год')
                     writer.fieldnames = fieldnames
                     writer.writeheader()
                     flag = False

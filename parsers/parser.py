@@ -173,7 +173,6 @@ def parse_data(id):
         logger.warning(f"[id:{id}]-->Компания не найдена на rusprofile'")
     return None
 
-
 def csv_writer(path):
     with open(path, 'w', newline='', encoding='utf-8') as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames='')
@@ -190,7 +189,6 @@ def csv_writer(path):
                     flag = False
                 writer.writerows(data)
                 logger.info(f"[id:{id}]-->Успешная запись данных о компании")
-
 
 if __name__ == '__main__':
     start = time.time()

@@ -4,3 +4,4 @@
 /venv/*
 /parsers/*.log
 /parsers/*.csv
+/.vscode

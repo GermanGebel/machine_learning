@@ -1,6 +1,5 @@
 import csv
 
-
 def to_float(s:str):
     new_s = ''.join(s.split(' '))
     arr = new_s.split(',')
@@ -18,9 +17,15 @@ if __name__ == "__main__":
         for row in data: 
             if count == 0:
                 fieldnames = [i for i in row]
+
+            if (not 'низкий' in row['оценка']) and (not 'средний' in row['оценка']) and (not 'высокий' in row['оценка']):
+                del row
+                continue
+
             for i in row:
                 if i != 'инн' and i != 'год' and i!='оценка' and i!='дата_регистрации' and i!='статус':
                     row[i] = to_float(row[i])
+
 
             values = [row[i] for i in row]
             inner_dict = dict(zip(fieldnames, values))
@@ -30,8 +35,6 @@ if __name__ == "__main__":
         data = new_data
         csv_reader.close()
     
-    print(data[0])
-
     with open('newdata.csv', 'w', newline='', encoding='utf-8') as csv_file:
         writer = csv.DictWriter(csv_file, delimiter=',', fieldnames=fieldnames)
         writer.writeheader()
